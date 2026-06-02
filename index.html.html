@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trivia PUCV</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Crimson+Text&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #0c0c18;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Georgia', serif;
+      padding: 16px;
+      gap: 16px;
+      color: #fff;
+    }
+
+    h1 {
+      font-family: 'Bebas Neue', cursive;
+      font-size: clamp(2rem, 6vw, 3.2rem);
+      letter-spacing: 0.2em;
+      background: linear-gradient(180deg, #fff 30%, #4fc3f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    #rosco-svg {
+      max-width: 460px;
+      width: 100%;
+      display: block;
+    }
+
+    .letter-btn { cursor: pointer; transition: transform 0.12s, filter 0.12s; }
+    .letter-btn:hover { filter: brightness(1.4); }
+    .letter-btn:active { transform: scale(0.92); }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .timer-btn {
+      background: none;
+      border: 1.5px solid #444;
+      border-radius: 8px;
+      color: #aaa;
+      cursor: pointer;
+      font-size: 0.78rem;
+      padding: 5px 12px;
+      transition: all 0.15s;
+      font-family: 'Crimson Text', serif;
+    }
+    .timer-btn:hover { border-color: #888; color: #fff; }
+    .timer-btn.start { border-color: #4fc3f7; color: #4fc3f7; font-weight: bold; font-size: 0.9rem; padding: 7px 18px; }
+    .timer-btn.pause { border-color: #ef5350; color: #ef5350; font-weight: bold; font-size: 0.9rem; padding: 7px 18px; }
+
+    #edit-area {
+      display: none;
+      gap: 6px;
+      align-items: center;
+    }
+    #edit-area.visible { display: flex; }
+
+    .edit-input {
+      background: #1a1a2e;
+      border: 2px solid #4fc3f7;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 1.1rem;
+      padding: 7px 12px;
+      width: 90px;
+      text-align: center;
+      outline: none;
+      font-family: 'Bebas Neue', cursive;
+      letter-spacing: 0.05em;
+    }
+
+    .legend {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: #888;
+      font-family: 'Crimson Text', serif;
+    }
+    .legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .hint {
+      color: #444;
+      font-size: 0.75rem;
+      font-family: 'Crimson Text', serif;
+      font-style: italic;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<h1>TRIVIA PUCV</h1>
+
+<svg id="rosco-svg" viewBox="0 0 460 460"></svg>
+
+<div class="controls">
+  <button class="timer-btn start" id="btn-start">▶ Iniciar</button>
+  <button class="timer-btn" id="btn-reset">↺ Reset</button>
+  <button class="timer-btn" id="btn-edit-limit">✎ <span id="limit-display">02:30</span></button>
+  <div id="edit-area">
+    <input class="edit-input" id="limit-input" placeholder="seg" type="number" min="1" />
+    <button class="timer-btn" id="btn-save-limit" style="border-color:#66bb6a;color:#66bb6a;">OK</button>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#44dd44"></div><span id="lbl-green">Verde (0)</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#dd4444"></div><span id="lbl-red">Rojo (0)</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ddcc00"></div><span id="lbl-yellow">Amarillo (0)</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#555588"></div><span id="lbl-gray">Sin color (25)</span></div>
+</div>
+
+<p class="hint">Clic en cada letra para cambiar su color &middot; ✎ para editar el tiempo límite</p>
+
+<script>
+  const LETTERS = "ABCDEFGHIJLMNOPQRSTUVWXYZ".split("");
+  const COLOR_CYCLE = ["gray","green","red","yellow"];
+  const COLOR_STYLES = {
+    gray:   { bg:"#2a2a3e", border:"#555588", text:"#aaaacc" },
+    green:  { bg:"#1a4a1a", border:"#44dd44", text:"#88ff88" },
+    red:    { bg:"#4a1a1a", border:"#dd4444", text:"#ff8888" },
+    yellow: { bg:"#3a3a00", border:"#ddcc00", text:"#ffee44" },
+  };
+
+  const CX=230, CY=230, RX=188, RY=188, R=22, TOTAL=25;
+  const arcR=52, arcCirc=2*Math.PI*arcR;
+
+  let colors = Object.fromEntries(LETTERS.map(l=>[l,"gray"]));
+  let running=false, elapsed=0, limit=150;
+  let intervalId=null;
+
+  const svg = document.getElementById("rosco-svg");
+  const NS = "http://www.w3.org/2000/svg";
+
+  function getPos(i) {
+    const angle = (i/TOTAL)*2*Math.PI - Math.PI/2;
+    return { x: CX+RX*Math.cos(angle), y: CY+RY*Math.sin(angle) };
+  }
+
+  function fmt(s) {
+    return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
+  }
+
+  // Build SVG
+  function buildSVG() {
+    svg.innerHTML = "";
+
+    // Track ring
+    const track = document.createElementNS(NS,"circle");
+    track.setAttribute("cx",CX); track.setAttribute("cy",CY);
+    track.setAttribute("r",RX+10); track.setAttribute("fill","none");
+    track.setAttribute("stroke","rgba(255,255,255,0.04)"); track.setAttribute("stroke-width",48);
+    svg.appendChild(track);
+
+    // Letters
+    LETTERS.forEach((letter,i)=>{
+      const {x,y}=getPos(i);
+      const col=COLOR_STYLES[colors[letter]];
+      const g=document.createElementNS(NS,"g");
+      g.setAttribute("class","letter-btn");
+      g.dataset.letter=letter;
+
+      const shadow=document.createElementNS(NS,"circle");
+      shadow.setAttribute("cx",x); shadow.setAttribute("cy",y);
+      shadow.setAttribute("r",R+4); shadow.setAttribute("fill","rgba(0,0,0,0.3)");
+
+      const circle=document.createElementNS(NS,"circle");
+      circle.setAttribute("cx",x); circle.setAttribute("cy",y);
+      circle.setAttribute("r",R); circle.setAttribute("fill",col.bg);
+      circle.setAttribute("stroke",col.border); circle.setAttribute("stroke-width",2);
+      circle.dataset.key="circle";
+
+      const text=document.createElementNS(NS,"text");
+      text.setAttribute("x",x); text.setAttribute("y",y+0.5);
+      text.setAttribute("text-anchor","middle"); text.setAttribute("dominant-baseline","middle");
+      text.setAttribute("fill",col.text); text.setAttribute("font-size",13);
+      text.setAttribute("font-weight","bold");
+      text.setAttribute("font-family","'Bebas Neue', cursive");
+      text.setAttribute("letter-spacing","0.05em");
+      text.style.userSelect="none"; text.style.pointerEvents="none";
+      text.textContent=letter;
+
+      g.appendChild(shadow); g.appendChild(circle); g.appendChild(text);
+
+      g.addEventListener("click",()=>{
+        const idx=COLOR_CYCLE.indexOf(colors[letter]);
+        colors[letter]=COLOR_CYCLE[(idx+1)%COLOR_CYCLE.length];
+        updateLetter(letter);
+        updateLegend();
+      });
+
+      svg.appendChild(g);
+    });
+
+    // Timer center bg
+    const centerBg=document.createElementNS(NS,"circle");
+    centerBg.setAttribute("cx",CX); centerBg.setAttribute("cy",CY);
+    centerBg.setAttribute("r",arcR+6); centerBg.setAttribute("fill","#0c0c18");
+    svg.appendChild(centerBg);
+
+    // Timer track
+    const arcTrack=document.createElementNS(NS,"circle");
+    arcTrack.setAttribute("cx",CX); arcTrack.setAttribute("cy",CY);
+    arcTrack.setAttribute("r",arcR); arcTrack.setAttribute("fill","none");
+    arcTrack.setAttribute("stroke","#1e1e2e"); arcTrack.setAttribute("stroke-width",7);
+    svg.appendChild(arcTrack);
+
+    // Timer arc
+    const arc=document.createElementNS(NS,"circle");
+    arc.setAttribute("id","timer-arc");
+    arc.setAttribute("cx",CX); arc.setAttribute("cy",CY);
+    arc.setAttribute("r",arcR); arc.setAttribute("fill","none");
+    arc.setAttribute("stroke","#4fc3f7"); arc.setAttribute("stroke-width",7);
+    arc.setAttribute("stroke-dasharray",arcCirc); arc.setAttribute("stroke-dashoffset",arcCirc);
+    arc.setAttribute("stroke-linecap","round");
+    arc.style.transition="stroke-dashoffset 0.9s linear, stroke 0.5s";
+    arc.style.transformOrigin=`${CX}px ${CY}px`;
+    arc.style.transform="rotate(-90deg)";
+    svg.appendChild(arc);
+
+    // Timer text
+    const tTime=document.createElementNS(NS,"text");
+    tTime.setAttribute("id","timer-text");
+    tTime.setAttribute("x",CX); tTime.setAttribute("y",CY-8);
+    tTime.setAttribute("text-anchor","middle"); tTime.setAttribute("dominant-baseline","middle");
+    tTime.setAttribute("fill","#4fc3f7"); tTime.setAttribute("font-size",22);
+    tTime.setAttribute("font-family","'Bebas Neue', cursive"); tTime.setAttribute("letter-spacing","0.05em");
+    tTime.style.userSelect="none";
+    tTime.textContent=fmt(limit);
+    svg.appendChild(tTime);
+
+    // Status text
+    const tStatus=document.createElementNS(NS,"text");
+    tStatus.setAttribute("id","timer-status");
+    tStatus.setAttribute("x",CX); tStatus.setAttribute("y",CY+14);
+    tStatus.setAttribute("text-anchor","middle"); tStatus.setAttribute("dominant-baseline","middle");
+    tStatus.setAttribute("fill","#555"); tStatus.setAttribute("font-size",9);
+    tStatus.setAttribute("font-family","'Crimson Text', serif");
+    tStatus.style.userSelect="none";
+    tStatus.textContent="PAUSADO";
+    svg.appendChild(tStatus);
+  }
+
+  function updateLetter(letter) {
+    const col=COLOR_STYLES[colors[letter]];
+    const g=svg.querySelector(`[data-letter="${letter}"]`);
+    if(!g) return;
+    const circles=g.querySelectorAll("circle");
+    const circle=circles[1];
+    const text=g.querySelector("text");
+    circle.setAttribute("fill",col.bg);
+    circle.setAttribute("stroke",col.border);
+    text.setAttribute("fill",col.text);
+  }
+
+  function updateTimer() {
+    const remaining=Math.max(0,limit-elapsed);
+    const progress=limit>0?elapsed/limit:0;
+    const color=progress>0.75?"#ef5350":progress>0.5?"#ffd740":"#4fc3f7";
+    const offset=arcCirc*(1-progress);
+
+    const arc=document.getElementById("timer-arc");
+    const tTime=document.getElementById("timer-text");
+    const tStatus=document.getElementById("timer-status");
+
+    if(arc){ arc.setAttribute("stroke",color); arc.setAttribute("stroke-dashoffset",offset); }
+    if(tTime){ tTime.setAttribute("fill",color); tTime.textContent=fmt(remaining); }
+    if(tStatus){ tStatus.textContent=running?"EN CURSO":(elapsed>=limit&&elapsed>0?"TIEMPO":"PAUSADO"); }
+  }
+
+  function updateLegend() {
+    document.getElementById("lbl-green").textContent=`Verde (${Object.values(colors).filter(c=>c==="green").length})`;
+    document.getElementById("lbl-red").textContent=`Rojo (${Object.values(colors).filter(c=>c==="red").length})`;
+    document.getElementById("lbl-yellow").textContent=`Amarillo (${Object.values(colors).filter(c=>c==="yellow").length})`;
+    document.getElementById("lbl-gray").textContent=`Sin color (${Object.values(colors).filter(c=>c==="gray").length})`;
+  }
+
+  function updateStartBtn() {
+    const btn=document.getElementById("btn-start");
+    if(running){ btn.textContent="⏸ Pausa"; btn.className="timer-btn pause"; }
+    else { btn.textContent="▶ Iniciar"; btn.className="timer-btn start"; }
+  }
+
+  // Controls
+  document.getElementById("btn-start").addEventListener("click",()=>{
+    running=!running;
+    updateStartBtn();
+    if(running){
+      intervalId=setInterval(()=>{
+        elapsed++;
+        if(elapsed>=limit){ elapsed=limit; running=false; clearInterval(intervalId); updateStartBtn(); }
+        updateTimer();
+      },1000);
+    } else {
+      clearInterval(intervalId);
+      updateTimer();
+    }
+  });
+
+  document.getElementById("btn-reset").addEventListener("click",()=>{
+    running=false; clearInterval(intervalId); elapsed=0;
+    colors = Object.fromEntries(LETTERS.map(l=>[l,"gray"]));
+    buildSVG();
+    updateTimer(); updateStartBtn(); updateLegend();
+  });
+
+  document.getElementById("btn-edit-limit").addEventListener("click",()=>{
+    document.getElementById("limit-input").value=limit;
+    document.getElementById("edit-area").classList.add("visible");
+    document.getElementById("btn-edit-limit").style.display="none";
+    document.getElementById("limit-input").focus();
+  });
+
+  function saveLimit(){
+    const val=parseInt(document.getElementById("limit-input").value);
+    if(!isNaN(val)&&val>0){
+      limit=val; elapsed=0; running=false; clearInterval(intervalId);
+      document.getElementById("limit-display").textContent=fmt(limit);
+      updateTimer(); updateStartBtn();
+    }
+    document.getElementById("edit-area").classList.remove("visible");
+    document.getElementById("btn-edit-limit").style.display="";
+  }
+
+  document.getElementById("btn-save-limit").addEventListener("click",saveLimit);
+  document.getElementById("limit-input").addEventListener("keydown",e=>{
+    if(e.key==="Enter") saveLimit();
+    if(e.key==="Escape"){
+      document.getElementById("edit-area").classList.remove("visible");
+      document.getElementById("btn-edit-limit").style.display="";
+    }
+  });
+
+  // Init
+  buildSVG();
+  updateTimer();
+  updateLegend();
+</script>
+</body>
+</html>

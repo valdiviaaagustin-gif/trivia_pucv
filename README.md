@@ -1,5 +1,4 @@
-# trivia_pucv
-<!DOCTYPE html>
+# trivia pucv
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
